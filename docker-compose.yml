@@ -1,0 +1,23 @@
+# search-service만 실행, geonpil-network의 Elasticsearch에 연결
+# 전제: geonpil 쪽에서 docker network create geonpil-network 후 Elasticsearch 등 기동
+# 실행: docker-compose up -d
+# 빌드: docker-compose up -d --build
+services:
+  search-service:
+    build: .
+    image: search-service:latest
+    container_name: search-service-dev
+    env_file: .env
+    ports:
+      - "18082:8081"
+    environment:
+      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-https://elasticsearch:9200}
+      - ELASTICSEARCH_SSL_INSECURE=${ELASTICSEARCH_SSL_INSECURE:-true}
+      - KAKAO_API_KEY=043ce262cb71f664e9ac1e46f4fb94a6
+      - SPRING_PROFILES_ACTIVE=dev
+    networks:
+      - geonpil-net
+
+networks:
+  geonpil-net:
+    external: true

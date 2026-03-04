@@ -1,0 +1,14 @@
+server:
+  address: 0.0.0.0
+  port: 8081
+
+elasticsearch:
+  host: ${ELASTICSEARCH_HOST:http://localhost:9200}
+  username: ${ELASTICSEARCH_USERNAME:}
+  password: ${ELASTICSEARCH_PASSWORD:}
+  ssl:
+    insecure: ${ELASTICSEARCH_SSL_INSECURE:false}
+
+kakao:
+  api:
+    key: ${KAKAO_API_KEY:}

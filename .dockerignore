@@ -1,0 +1,23 @@
+# Git, IDE, env (비밀번호 등)
+.git
+.gitignore
+.env
+.env.*
+.idea
+*.iml
+.vscode
+*.md
+
+# Build output (Docker에서 다시 빌드)
+build/
+out/
+
+# Logs, temp
+*.log
+tmp
+temp
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore

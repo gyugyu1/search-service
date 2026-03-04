@@ -1,0 +1,15 @@
+server:
+  address: 0.0.0.0
+  port: 8081
+
+elasticsearch:
+  host: ${ELASTICSEARCH_HOST:https://localhost:9201}
+  username: ${ELASTICSEARCH_USERNAME:}
+  password: ${ELASTICSEARCH_PASSWORD:}
+  ssl:
+    # dev: 자체 서명 인증서 허용 (로컬/개인 ES용). prod에서는 env로 false 권장
+    insecure: ${ELASTICSEARCH_SSL_INSECURE:true}
+
+kakao:
+  api:
+    key: ${KAKAO_API_KEY:}

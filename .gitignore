@@ -1,0 +1,21 @@
+# 환경 변수 (비밀번호 등)
+.env
+
+# Build
+build/
+out/
+
+# IDE
+.idea
+*.iml
+.vscode
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# setting.env
+*.env
