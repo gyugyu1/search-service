@@ -3,11 +3,14 @@ server:
   port: 8081
 
 elasticsearch:
-  host: ${ELASTICSEARCH_HOST:http://localhost:9200}
+  host: ${ELASTICSEARCH_HOST:https://localhost:9200}
   username: ${ELASTICSEARCH_USERNAME:}
   password: ${ELASTICSEARCH_PASSWORD:}
   ssl:
-    insecure: ${ELASTICSEARCH_SSL_INSECURE:false}
+    insecure: ${ELASTICSEARCH_SSL_INSECURE:true}
+    # 운영은 직접 truststore를 경로 지정
+    truststore-path: ${ELASTICSEARCH_SSL_TRUSTSTORE_PATH:}
+    truststore-password: ${ELASTICSEARCH_SSL_TRUSTSTORE_PASSWORD:changeit}
 
 kakao:
   api:

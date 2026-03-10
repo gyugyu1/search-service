@@ -13,10 +13,13 @@ services:
     environment:
       - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-https://elasticsearch:9200}
       - ELASTICSEARCH_SSL_INSECURE=${ELASTICSEARCH_SSL_INSECURE:-true}
-      - KAKAO_API_KEY=043ce262cb71f664e9ac1e46f4fb94a6
+      - KAKAO_API_KEY=${KAKAO_API_KEY:-}
       - SPRING_PROFILES_ACTIVE=prod
+      - JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStore=/certs/truststore.jks -Djavax.net.ssl.trustStorePassword=${ELASTICSEARCH_TRUSTSTORE_PASSWORD:-changeit}"
     networks:
       - geonpil-net
+    volumes:
+      - ./certs:/certs:ro
 
 networks:
   geonpil-net:
