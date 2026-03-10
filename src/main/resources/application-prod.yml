@@ -7,8 +7,8 @@ elasticsearch:
   username: ${ELASTICSEARCH_USERNAME:}
   password: ${ELASTICSEARCH_PASSWORD:}
   ssl:
-    insecure: ${ELASTICSEARCH_SSL_INSECURE:true}
-    # 운영은 직접 truststore를 경로 지정
+    # false 시 truststore-path 로 ES 인증서 검증 (운영 self-signed CA)
+    insecure: ${ELASTICSEARCH_SSL_INSECURE:false}
     truststore-path: ${ELASTICSEARCH_SSL_TRUSTSTORE_PATH:}
     truststore-password: ${ELASTICSEARCH_SSL_TRUSTSTORE_PASSWORD:changeit}
 

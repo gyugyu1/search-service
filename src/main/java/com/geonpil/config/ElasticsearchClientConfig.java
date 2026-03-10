@@ -22,6 +22,11 @@ import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.security.KeyStore;
 
 @Configuration
 public class ElasticsearchClientConfig {
@@ -37,6 +42,12 @@ public class ElasticsearchClientConfig {
 
     @Value("${elasticsearch.ssl.insecure:false}")
     private boolean sslInsecure;
+
+    @Value("${elasticsearch.ssl.truststore-path:}")
+    private String truststorePath;
+
+    @Value("${elasticsearch.ssl.truststore-password:changeit}")
+    private String truststorePassword;
 
     @Bean
     public RestClient restClient() {
@@ -56,6 +67,22 @@ public class ElasticsearchClientConfig {
                     httpClientBuilder.setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE);
                 } catch (Exception e) {
                     throw new IllegalStateException("Failed to create insecure SSLContext for Elasticsearch", e);
+                }
+            } else if ("https".equalsIgnoreCase(httpHost.getSchemeName())
+                    && truststorePath != null && !truststorePath.trim().isEmpty()
+                    && Files.exists(Paths.get(truststorePath.trim()))) {
+                try {
+                    KeyStore ks = KeyStore.getInstance("JKS");
+                    try (InputStream is = Files.newInputStream(Paths.get(truststorePath.trim()))) {
+                        ks.load(is, truststorePassword != null ? truststorePassword.toCharArray() : "changeit".toCharArray());
+                    }
+                    TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                    tmf.init(ks);
+                    SSLContext sslContext = SSLContext.getInstance("TLS");
+                    sslContext.init(null, tmf.getTrustManagers(), null);
+                    httpClientBuilder.setSSLContext(sslContext);
+                } catch (Exception e) {
+                    throw new IllegalStateException("Elasticsearch truststore 로드 실패: path=" + truststorePath, e);
                 }
             }
 
