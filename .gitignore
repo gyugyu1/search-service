@@ -5,6 +5,9 @@
 build/
 out/
 
+# Gradle (local caches/locks)
+.gradle/
+
 # IDE
 .idea
 *.iml
