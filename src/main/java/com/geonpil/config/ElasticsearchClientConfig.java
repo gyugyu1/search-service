@@ -9,6 +9,8 @@ import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.ssl.SSLContexts;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestClientBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,6 +32,8 @@ import java.security.KeyStore;
 
 @Configuration
 public class ElasticsearchClientConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(ElasticsearchClientConfig.class);
 
     @Value("${elasticsearch.host}")
     private String host;
@@ -58,7 +62,13 @@ public class ElasticsearchClientConfig {
             && password != null && !password.trim().isEmpty();
 
         builder.setHttpClientConfigCallback(httpClientBuilder -> {
-            if ("https".equalsIgnoreCase(httpHost.getSchemeName()) && sslInsecure) {
+            boolean isHttps = "https".equalsIgnoreCase(httpHost.getSchemeName());
+            String trimmedTruststorePath = truststorePath != null ? truststorePath.trim() : "";
+            boolean truststorePathSet = !trimmedTruststorePath.isEmpty();
+            boolean truststoreExists = truststorePathSet && Files.exists(Paths.get(trimmedTruststorePath));
+
+            if (isHttps && sslInsecure) {
+                log.info("Elasticsearch SSL: insecure 모드 (인증서 검증 비활성화)");
                 try {
                     SSLContext sslContext = SSLContexts.custom()
                         .loadTrustMaterial(null, (chain, authType) -> true)
@@ -68,12 +78,11 @@ public class ElasticsearchClientConfig {
                 } catch (Exception e) {
                     throw new IllegalStateException("Failed to create insecure SSLContext for Elasticsearch", e);
                 }
-            } else if ("https".equalsIgnoreCase(httpHost.getSchemeName())
-                    && truststorePath != null && !truststorePath.trim().isEmpty()
-                    && Files.exists(Paths.get(truststorePath.trim()))) {
+            } else if (isHttps && truststoreExists) {
+                log.info("Elasticsearch SSL: truststore 사용 path={}", trimmedTruststorePath);
                 try {
                     KeyStore ks = KeyStore.getInstance("JKS");
-                    try (InputStream is = Files.newInputStream(Paths.get(truststorePath.trim()))) {
+                    try (InputStream is = Files.newInputStream(Paths.get(trimmedTruststorePath))) {
                         ks.load(is, truststorePassword != null ? truststorePassword.toCharArray() : "changeit".toCharArray());
                     }
                     TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
@@ -81,9 +90,15 @@ public class ElasticsearchClientConfig {
                     SSLContext sslContext = SSLContext.getInstance("TLS");
                     sslContext.init(null, tmf.getTrustManagers(), null);
                     httpClientBuilder.setSSLContext(sslContext);
+                    // IP로 접속 시 서버 인증서 CN과 불일치하므로 호스트명 검증 완화
+                    httpClientBuilder.setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE);
                 } catch (Exception e) {
-                    throw new IllegalStateException("Elasticsearch truststore 로드 실패: path=" + truststorePath, e);
+                    throw new IllegalStateException("Elasticsearch truststore 로드 실패: path=" + trimmedTruststorePath, e);
                 }
+            } else if (isHttps && truststorePathSet && !truststoreExists) {
+                log.warn("Elasticsearch SSL: truststore 경로가 설정됐지만 파일 없음 path={} → 기본 Java 인증서 검증 사용 (자체 서명 시 PKIX 오류 가능)", trimmedTruststorePath);
+            } else if (isHttps) {
+                log.info("Elasticsearch SSL: 기본 Java truststore 사용 (HTTPS, insecure=false, truststore 미설정)");
             }
 
             if (hasCreds) {
