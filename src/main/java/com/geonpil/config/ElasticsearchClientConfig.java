@@ -61,13 +61,28 @@ public class ElasticsearchClientConfig {
         boolean hasCreds = username != null && !username.trim().isEmpty()
             && password != null && !password.trim().isEmpty();
 
-        builder.setHttpClientConfigCallback(httpClientBuilder -> {
-            boolean isHttps = "https".equalsIgnoreCase(httpHost.getSchemeName());
-            String trimmedTruststorePath = truststorePath != null ? truststorePath.trim() : "";
-            boolean truststorePathSet = !trimmedTruststorePath.isEmpty();
-            boolean truststoreExists = truststorePathSet && Files.exists(Paths.get(trimmedTruststorePath));
+        // Bean 생성 시점에 SSL 설정 상태 로그 및 검증
+        boolean isHttps = "https".equalsIgnoreCase(httpHost.getSchemeName());
+        String trimmedTruststorePath = truststorePath != null ? truststorePath.trim() : "";
+        boolean truststorePathSet = !trimmedTruststorePath.isEmpty();
+        boolean truststoreExists = truststorePathSet && Files.exists(Paths.get(trimmedTruststorePath));
+        if (isHttps) {
+            log.info("Elasticsearch SSL 설정: host={}, sslInsecure={}, truststorePath={}, truststoreExists={}",
+                host, sslInsecure, trimmedTruststorePath.isEmpty() ? "(미설정)" : trimmedTruststorePath, truststoreExists);
+            if (truststorePathSet && !truststoreExists) {
+                throw new IllegalStateException(
+                    "Elasticsearch HTTPS 사용 중인데 truststore 파일이 없습니다. path=" + trimmedTruststorePath
+                        + " (컨테이너에 certs 볼륨 마운트 및 truststore.jks 존재 여부 확인)");
+            }
+        }
 
-            if (isHttps && sslInsecure) {
+        builder.setHttpClientConfigCallback(httpClientBuilder -> {
+            boolean isHttpsCallback = "https".equalsIgnoreCase(httpHost.getSchemeName());
+            String trimmedPath = truststorePath != null ? truststorePath.trim() : "";
+            boolean pathSet = !trimmedPath.isEmpty();
+            boolean exists = pathSet && Files.exists(Paths.get(trimmedPath));
+
+            if (isHttpsCallback && sslInsecure) {
                 log.info("Elasticsearch SSL: insecure 모드 (인증서 검증 비활성화)");
                 try {
                     SSLContext sslContext = SSLContexts.custom()
@@ -78,11 +93,11 @@ public class ElasticsearchClientConfig {
                 } catch (Exception e) {
                     throw new IllegalStateException("Failed to create insecure SSLContext for Elasticsearch", e);
                 }
-            } else if (isHttps && truststoreExists) {
-                log.info("Elasticsearch SSL: truststore 사용 path={}", trimmedTruststorePath);
+            } else if (isHttpsCallback && exists) {
+                log.info("Elasticsearch SSL: truststore 사용 path={}", trimmedPath);
                 try {
                     KeyStore ks = KeyStore.getInstance("JKS");
-                    try (InputStream is = Files.newInputStream(Paths.get(trimmedTruststorePath))) {
+                    try (InputStream is = Files.newInputStream(Paths.get(trimmedPath))) {
                         ks.load(is, truststorePassword != null ? truststorePassword.toCharArray() : "changeit".toCharArray());
                     }
                     TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
@@ -90,15 +105,14 @@ public class ElasticsearchClientConfig {
                     SSLContext sslContext = SSLContext.getInstance("TLS");
                     sslContext.init(null, tmf.getTrustManagers(), null);
                     httpClientBuilder.setSSLContext(sslContext);
-                    // IP로 접속 시 서버 인증서 CN과 불일치하므로 호스트명 검증 완화
                     httpClientBuilder.setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE);
                 } catch (Exception e) {
-                    throw new IllegalStateException("Elasticsearch truststore 로드 실패: path=" + trimmedTruststorePath, e);
+                    throw new IllegalStateException("Elasticsearch truststore 로드 실패: path=" + trimmedPath, e);
                 }
-            } else if (isHttps && truststorePathSet && !truststoreExists) {
-                log.warn("Elasticsearch SSL: truststore 경로가 설정됐지만 파일 없음 path={} → 기본 Java 인증서 검증 사용 (자체 서명 시 PKIX 오류 가능)", trimmedTruststorePath);
-            } else if (isHttps) {
-                log.info("Elasticsearch SSL: 기본 Java truststore 사용 (HTTPS, insecure=false, truststore 미설정)");
+            } else if (isHttpsCallback && pathSet && !exists) {
+                log.warn("Elasticsearch SSL: truststore 경로가 설정됐지만 파일 없음 path={} → 기본 Java 인증서 검증 사용 (자체 서명 시 PKIX 오류)", trimmedPath);
+            } else if (isHttpsCallback) {
+                log.info("Elasticsearch SSL: 기본 Java truststore 사용 (truststore 미설정)");
             }
 
             if (hasCreds) {
