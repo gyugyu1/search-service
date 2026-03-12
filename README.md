@@ -1,79 +1,116 @@
 # search-service
 
-책 검색·자동완성·인기검색어·검색 로그를 제공하는 MSA 검색 서비스입니다.
+책 검색 기능을 **독립 서비스(MSA)** 로 분리한 검색 백엔드입니다.  
+`geonpil` 본 서비스(또는 다른 클라이언트)가 HTTP로 호출해 **도서 검색 / 자동완성 / 인기검색어 / 검색 로그 수집**을 제공합니다.
 
-## 요구 사항
+## 핵심 기능
 
-- Java 17
-- Elasticsearch (로컬: `http://localhost:9200`)
-- Kakao 도서 검색 API 키 (`kakao.api.key` 또는 `KAKAO_API_KEY`)
+- **도서 검색 API**: Kakao 도서 검색 API를 호출하고, 응답을 서비스 화면에 맞는 DTO로 가공해 반환
+- **검색 로그 수집**: 검색어/사용자/클라이언트 정보를 Elasticsearch에 저장
+- **인기검색어**: Elasticsearch terms aggregation으로 Top N 키워드 집계
+- **자동완성**: 입력 prefix 기반으로 검색 결과의 title을 후보로 만들고 중복 제거/limit 처리
 
-### Elasticsearch 실행 (로컬, 단독 실행 시)
+## 기술 스택
 
-Elasticsearch를 이 프로젝트에서 띄우지 않고 **geonpil Docker의 Elasticsearch**를 쓰는 경우에는 아래 Docker 실행만 하면 됩니다.
+- **Java 17**
+- **Spring Boot 3.1.x**
+  - `spring-boot-starter-web` (REST API)
+  - `spring-boot-starter-data-elasticsearch` + Elasticsearch Java API Client 사용
+- **Elasticsearch**
+  - 검색 로그 인덱스(`book_search_log`) 자동 생성/매핑 보정
+- **Docker**
+  - 멀티 스테이지 빌드로 `bootJar` 생성 후 JRE 이미지로 실행
+- **GitHub Actions**
+  - main push 시 Docker 이미지 빌드/푸시 → self-hosted runner에서 compose pull & up
 
-## Docker 실행 (geonpil-network)
+## 아키텍처 / 데이터 흐름
 
-geonpil 쪽에 `geonpil-net`와 Elasticsearch가 이미 떠 있을 때, search-service만 같은 네트워크에 붙여 실행합니다.
+- **검색**
+  - Client → `GET /api/search/books` → `BookSearchService` → Kakao API 호출 → 응답 DTO 변환 → Client
+- **로그 수집**
+  - Client → `POST /api/search/log` → `BookSearchLogService` → Elasticsearch index
+- **인기검색어**
+  - Client → `GET /api/search/popular` → Elasticsearch aggregation(terms) → Top N 반환
+- **자동완성**
+  - Client → `GET /api/search/suggestions` → (prefix로 1차 검색) → title 후보 추출/정제
 
-### 1. `.env` 파일 준비 (필수)
+## API
 
-인증 정보는 `docker-compose.yml`에 넣지 않고 `.env`에서 읽습니다. (`.env`는 Git에 올라가지 않습니다.)
-
-```bash
-# .env.example을 복사한 뒤 값을 채움
-copy .env.example .env
-# .env를 열어 ELASTICSEARCH_PASSWORD 등 수정
-```
-
-- **필수**: `ELASTICSEARCH_USERNAME`, `ELASTICSEARCH_PASSWORD` (ES 컨테이너의 `ELASTIC_PASSWORD`와 동일하게)
-- 선택: `ELASTICSEARCH_HOST`, `ELASTICSEARCH_SSL_INSECURE`, `KAKAO_API_KEY`
-
-### 2. 컨테이너 실행
-
-```bash
-cd c:\geonpil2\search-service
-docker-compose up -d --build
-```
-
-- **전제**: geonpil 프로젝트에서 `geonpil-net`이 생성되어 있고, 그 안에 Elasticsearch 컨테이너가 기동 중이어야 합니다.
-- Elasticsearch 서비스 이름이 `elasticsearch`가 아니면 `.env`의 `ELASTICSEARCH_HOST`를 해당 이름으로 수정 (예: `https://es:9200`).
-
-중지: `docker-compose down`
-
-## 설정
-
-- `src/main/resources/application-dev.yml`
-  - `elasticsearch.host`, `elasticsearch.username`, `elasticsearch.password`
-  - `kakao.api.key` (또는 환경변수 `KAKAO_API_KEY`)
-- 기본 포트: **8081** (geonpil 메인 앱은 8080)
-
-## 빌드 및 실행
-
-Gradle Wrapper가 없으면 **geonpil** 프로젝트 루트에서:
-
-```bash
-cd c:\geonpil2\geonpil
-.\gradlew.bat -p ..\search-service bootRun
-```
-
-또는 search-service에 Gradle Wrapper를 생성한 뒤:
-
-```bash
-cd c:\geonpil2\search-service
-.\gradlew.bat bootRun
-```
-
-## API (기본 base: `http://localhost:8081`)
+Base URL: `http://localhost:8081`
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | GET | `/api/search/books?query=...&page=1&size=15` | 책 검색 |
 | GET | `/api/search/suggestions?q=...&limit=10` | 자동완성 |
 | GET | `/api/search/popular?topN=10` | 인기 검색어 |
-| POST | `/api/search/log` | 검색 로그 저장 (body: `keyword`, `userId`, `ip`, `userAgent`) |
+| POST | `/api/search/log` | 검색 로그 저장 |
 
-## geonpil과 연동
+`POST /api/search/log` body 예시:
 
-geonpil 쪽에서 `BookSearchFacade`의 **원격 구현체**(예: `RestBookSearchFacade`)를 만들어  
-위 API를 호출하도록 하면, 기존 화면/컨트롤러 수정 없이 검색 기능을 search-service로 이전할 수 있습니다.
+```json
+{
+  "keyword": "클린 코드",
+  "userId": 1,
+  "ip": "127.0.0.1",
+  "userAgent": "Mozilla/5.0 ..."
+}
+```
+
+## 설정 (환경변수)
+
+민감정보는 커밋하지 않고 **환경변수/.env**로 주입합니다.
+
+- **필수**
+  - `KAKAO_API_KEY`
+- **Elasticsearch**
+  - `ELASTICSEARCH_HOST` (예: `https://elasticsearch:9200`)
+  - `ELASTICSEARCH_USERNAME`, `ELASTICSEARCH_PASSWORD`
+  - dev: `ELASTICSEARCH_SSL_INSECURE=true` (자체 서명 인증서 허용)
+  - prod(선택): `ELASTICSEARCH_SSL_TRUSTSTORE_PATH`, `ELASTICSEARCH_SSL_TRUSTSTORE_PASSWORD`
+- **서버**
+  - `SERVER_PORT` (기본 8081)
+
+예시 파일은 `.env.example`를 참고하세요.
+
+## 로컬 실행
+
+### 1) 애플리케이션만 실행 (Gradle)
+
+```bash
+cd c:\geonpil2\search-service
+.\gradlew.bat bootRun
+```
+
+### 2) Docker로 실행 (외부 Elasticsearch 사용)
+
+전제: 같은 네트워크(`geonpil-net`)에 Elasticsearch가 실행 중이어야 합니다.
+
+```bash
+cd c:\geonpil2\search-service
+copy .env.example .env
+docker-compose up -d --build
+```
+
+- 종료: `docker-compose down`
+
+## 배포
+
+`.github/workflows/deploy.yml`
+
+- main push 시 DockerHub에 이미지 push
+  - `${DOCKERHUB_USERNAME}/search-service:latest`
+  - `${DOCKERHUB_USERNAME}/search-service:${GITHUB_SHA}`
+- 이후 self-hosted runner(`prod` 라벨)에서
+  - 운영 서버의 compose(`docker-compose.prod.yml`)로 pull & up -d 수행
+
+## 프로젝트 구조 (요약)
+
+- `src/main/java/com/geonpil/searchservice/controller` : REST API 컨트롤러
+- `src/main/java/com/geonpil/service` : 검색/로그 서비스 로직
+- `src/main/java/com/geonpil/config` : Jackson/Elasticsearch 클라이언트 설정
+- `src/main/resources` : `application.yml`, `application-dev.yml`, `application-prod.yml`
+
+## geonpil과의 연동 의도
+
+본 서비스는 검색 기능을 “외부 REST API”로 분리해, `geonpil` 본 서비스에서는 facade/adapter 형태로 호출하도록 설계했습니다.  
+즉, 화면/유스케이스는 유지하면서 검색 구현을 독립적으로 배포·확장할 수 있습니다.
